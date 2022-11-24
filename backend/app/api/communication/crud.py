@@ -19,28 +19,29 @@ from sqlalchemy.sql import (
     text,
 )
 from api.auth.schemas import (
-    UserObjectSchema,
+    UserBase,
 )
 import uuid
 from api import deps
 
 
-class ExampleService:
-    # def __init__(self, session: AsyncSession = Depends(db_session)):
-    #     self.session = session
-
-    async def get_all_examples(self, db: Session) -> list[schemas.Examples]:
-        examples = db.query(Example).all()
-
-        return examples
-
-    def create_example(self, db: Session, data) -> Example:
-        example = Example(**data.dict())
-        db.add(example)
-        db.commit()
-        db.refresh(example)
-
-        return example
+async def get_user_contacts(user_id: int, session: Session):
+    user = await deps.find_existed_user(user_id, session)
+    if user:
+        # get all contacts for each user.
+        query = """
+            SELECT
+              *
+            FROM
+              users
+        """
+        result = session.execute(text(query))
+        contacts = result.fetchall()
+        results = {"status_code": 200, "result": contacts}
+        return results
+    elif not user:
+        return {"status_code": 400, "message": "User not found!"}
+    return {"status_code": 200, "result": []}
 
 
 async def send_new_message(  # pylint: disable=R0911
@@ -155,7 +156,7 @@ async def send_new_message(  # pylint: disable=R0911
                 "status_code": 400,
                 "message": "You can't send an empty message!",
             }
-        receiver = await deps.find_existed_user(email=request.receiver, session=session)
+        receiver = await deps.find_existed_user(id=request.receiver, session=session)
         if not receiver:
             return {
                 "status_code": 400,
@@ -195,7 +196,7 @@ async def send_new_message(  # pylint: disable=R0911
 
 
 async def get_sender_receiver_messages(
-    sender: UserObjectSchema, receiver: str, session: Session
+    sender: UserBase, receiver: str, session: Session
 ):
     print(receiver)
     print(sender.id)
@@ -205,7 +206,7 @@ async def get_sender_receiver_messages(
 
     Args:
         sender (UserObjectSchema) : A user object schema that contains infor about a sender.
-        receiver (EmailStr) : An email for the recipient of the message.
+        receiver (user_id) : An id for the recipient of the message.
         session (AsyncSession) : SqlAlchemy session object.
 
     Returns:
@@ -225,7 +226,7 @@ async def get_sender_receiver_messages(
                 WHEN sender = :sender_id THEN "sent"
                 WHEN receiver = :sender_id THEN "received"
                 ELSE NULL
-            END as type,
+            END as status,
             media,
             creation_date
         FROM
@@ -507,7 +508,7 @@ async def get_room_conversations(room_name: str, sender_id: int, session: Sessio
                 CASE
                     WHEN messages.sender = :sender_id THEN "sent"
                     ELSE "received"
-                END as type,
+                END as status,
                 messages.media,
                 messages.creation_date,
                 users.id as id,
@@ -539,7 +540,7 @@ async def get_room_conversations(room_name: str, sender_id: int, session: Sessio
                 CASE
                     WHEN messages.sender = :sender_id THEN "sent"
                     ELSE "received"
-                END as type,
+                END as status,
                 messages.media,
                 messages.creation_date,
                 users.id as id,
